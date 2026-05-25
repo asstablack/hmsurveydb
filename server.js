@@ -501,6 +501,10 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok' });
+});
+
 app.use((req, res) => {
     res.status(404).json({ message: 'Route not found' });
 });
