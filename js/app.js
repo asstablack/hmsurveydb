@@ -6,7 +6,7 @@
 const app = {
     // State
     currentUser: null,
-apiBaseUrl: window.location.origin,
+ apiBaseUrl: window.location.origin,
     surveys: [],
     systemUsers: [],
     auditLogs: [],
@@ -425,6 +425,13 @@ apiBaseUrl: window.location.origin,
     /**
      * Logout user
      */
+    toggleSidebar() {
+        const sidebar = document.querySelector('.sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        sidebar.classList.toggle('active');
+        if (overlay) overlay.classList.toggle('active');
+    },
+
     logout() {
         this.currentUser = null;
         sessionStorage.removeItem('currentUser');
