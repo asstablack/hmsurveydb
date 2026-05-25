@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Survey Record Management System</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+    <!-- LOGIN PAGE -->
+    <div id="loginPage" class="login-container">
+        <div class="login-box">
+            <div class="logo">
+                <img src="images/company-logo.png" alt="Company Logo" class="company-logo">
+            </div>
+
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" required placeholder="Enter username">
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" required placeholder="Enter password">
+                </div>
+                <button type="submit" class="btn btn-primary">Login</button>
+                <button type="button" class="btn btn-secondary auth-switch" onclick="app.toggleRegister(true)">Request Account</button>
+            </form>
+
+            <form id="registerForm" class="hidden">
+                <div class="form-group">
+                    <label for="registerFullName">Full Name</label>
+                    <input type="text" id="registerFullName" required placeholder="Enter full name">
+                </div>
+                <div class="form-group">
+                    <label for="registerUsername">Username</label>
+                    <input type="text" id="registerUsername" required placeholder="Choose username">
+                </div>
+                <div class="form-group">
+                    <label for="registerEmail">Email</label>
+                    <input type="email" id="registerEmail" required placeholder="Enter email">
+                </div>
+                <div class="form-group">
+                    <label for="registerPassword">Password</label>
+                    <input type="password" id="registerPassword" required minlength="6" placeholder="Minimum 6 characters">
+                </div>
+                <button type="submit" class="btn btn-primary">Submit for Approval</button>
+                <button type="button" class="btn btn-secondary auth-switch" onclick="app.toggleRegister(false)">Back to Login</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="dashboard" class="dashboard-container hidden">
+
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <img src="images/company-logo.png" alt="Company Logo" class="sidebar-logo">
+            </div>
+
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-tab="add">
+                    <span class="nav-icon">➕</span>
+                    <span>Add Survey</span>
+                </button>
+                <button class="nav-item" data-tab="view">
+                    <span class="nav-icon">📋</span>
+                    <span>View Records</span>
+                </button>
+                <button class="nav-item" data-tab="analytics">
+                    <span class="nav-icon">📊</span>
+                    <span>Analytics</span>
+                </button>
+                <button class="nav-item" data-tab="allMap">
+                    <span class="nav-icon">🗺</span>
+                    <span>All Work Map</span>
+                </button>
+                <button class="nav-item hidden" id="adminNav" data-tab="admin">
+                    <span class="nav-icon">🛡</span>
+                    <span>Admin</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar" id="userAvatar">U</div>
+                    <div class="user-info">
+                        <span class="user-name" id="currentUserName">User</span>
+                        <span class="user-role" id="currentUserRole">Surveyor</span>
+                    </div>
+                </div>
+                <button class="btn-logout" onclick="app.changeOwnPassword()">
+                    <span>🔑</span> Change Password
+                </button>
+                <button class="btn-logout" onclick="app.logout()">
+                    <span>🚪</span> Logout
+                </button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="content-header">
+                <h1 id="pageTitle">Add New Survey</h1>
+                <div class="header-actions">
+                    <button class="btn-icon" onclick="app.exportData()" title="Export to CSV">📥</button>
+                </div>
+            </header>
+
+            <!-- ADD SURVEY TAB -->
+            <div id="addTab" class="tab-content active">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Survey Information</h3>
+                        <p>Enter the details for the new survey record</p>
+                    </div>
+
+                    <form id="surveyForm" class="survey-form">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="surveyor">SURV. *</label>
+                                <input type="text" id="surveyor" required placeholder="e.g., John Smith">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="surveyNumber">Plan Number *</label>
+                                <input type="text" id="surveyNumber" required placeholder="e.g., SVY-2024-001">
+                            </div>
+
+                            <div class="form-group span-2">
+                                <label for="surveyName">Title *</label>
+                                <input type="text" id="surveyName" required placeholder="e.g., Downtown Commercial District">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="surveyDate">Survey Date *</label>
+                                <input type="date" id="surveyDate" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="surveyArea">Land Size *</label>
+                                <div style="display:flex; gap:8px;">
+                                    <input type="number" id="surveyArea" step="0.0001" required placeholder="e.g., 492.756">
+                                    <select id="areaUnit" required>
+                                        <option value="sqm">Square Meter</option>
+                                        <option value="acre">Acre</option>
+                                        <option value="hectare">Hectare</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="localGov">Local Government *</label>
+                                <select id="localGov" required>
+                                    <option value="" disabled selected>Select LGA</option>
+                                    <option value="Abeokuta North">Abeokuta North</option>
+                                    <option value="Abeokuta South">Abeokuta South</option>
+                                    <option value="Ado-Odo/Ota">Ado-Odo/Ota</option>
+                                    <option value="Ewekoro">Ewekoro</option>
+                                    <option value="Ifo">Ifo</option>
+                                    <option value="Ijebu East">Ijebu East</option>
+                                    <option value="Ijebu North">Ijebu North</option>
+                                    <option value="Ijebu North East">Ijebu North East</option>
+                                    <option value="Ijebu Ode">Ijebu Ode</option>
+                                    <option value="Ikenne">Ikenne</option>
+                                    <option value="Imeko Afon">Imeko Afon</option>
+                                    <option value="Ipokia">Ipokia</option>
+                                    <option value="Obafemi Owode">Obafemi Owode</option>
+                                    <option value="Odeda">Odeda</option>
+                                    <option value="Odogbolu">Odogbolu</option>
+                                    <option value="Ogun Waterside">Ogun Waterside</option>
+                                    <option value="Remo North">Remo North</option>
+                                    <option value="Shagamu">Shagamu</option>
+                                    <option value="Yewa North">Yewa North</option>
+                                    <option value="Yewa South">Yewa South</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="observedBy">Observed By *</label>
+                                <input type="text" id="observedBy" required placeholder="e.g., John Dior">
+                            </div>
+
+                            <div class="form-group span-2">
+                                <label for="description">Location</label>
+                                <textarea id="description" rows="2" placeholder="Location details..."></textarea>
+                            </div>
+
+                            <div class="form-group span-2">
+                                <label for="jobType">Job Type *</label>
+                                <select id="jobType" required>
+                                    <option value="" disabled selected>Select job type</option>
+                                    <option value="change-title">Change Title</option>
+                                    <option value="additional-portion">Additional Portion</option>
+                                    <option value="plan-updating">Plan Updating</option>
+                                    <option value="pillars-picked">Pillars Picked on Ground</option>
+                                    <option value="plan-compilation">Plan Compilation</option>
+                                    <option value="fresh-pillar">Fresh Pillar</option>
+                                    <option value="subdivision">Subdivision</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="easting">Easting (X) *</label>
+                                <input type="number" id="easting" step="0.0001" required placeholder="345678.9012">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="northing">Northing (Y) *</label>
+                                <input type="number" id="northing" step="0.0001" required placeholder="6789012.3456">
+                            </div>
+
+                            <div class="form-group span-2">
+                                <label for="surveyRemark">Remark</label>
+                                <textarea id="surveyRemark" rows="2" placeholder="Optional remarks..."></textarea>
+                            </div>
+                        </div>
+
+                        <div class="file-section document-section">
+                            <div class="document-section-header">
+                                <div class="document-header-icon">▭</div>
+                                <div>
+                                    <h3>Required Documents</h3>
+                                    <p>Upload the necessary documents for this survey record</p>
+                                </div>
+                            </div>
+
+                            <div class="document-row document-purple">
+                                <div class="document-icon">▣</div>
+                                <div class="document-copy">
+                                    <h4>Survey Plan</h4>
+                                    <p>Upload the survey plan document</p>
+                                </div>
+                                <div class="document-actions">
+                                    <label class="document-upload-btn" for="fileSurveyPlan">⇧ Choose File</label>
+                                    <input type="file" id="fileSurveyPlan" accept=".pdf,.jpg,.jpeg,.png,.dwg,.dxf">
+                                    <span id="fileSurveyPlanName" class="document-file-name">No file chosen</span>
+                                </div>
+                            </div>
+
+                            <div class="document-row document-blue">
+                                <div class="document-icon">▤</div>
+                                <div class="document-copy">
+                                    <h4>Record Copy</h4>
+                                    <p>Upload the record copy document</p>
+                                    <label class="checkbox-label compact-check">
+                                        <input type="checkbox" id="recordCopySubmitted">
+                                        Record Copy Submitted
+                                    </label>
+                                </div>
+                                <div class="document-actions">
+                                    <label class="document-upload-btn" for="fileRecordCopy">⇧ Choose File</label>
+                                    <input type="file" id="fileRecordCopy" accept=".pdf,.jpg,.jpeg,.png">
+                                    <span id="fileRecordCopyName" class="document-file-name">No file chosen</span>
+                                </div>
+                            </div>
+
+                            <div class="document-row document-green">
+                                <div class="document-icon">◉</div>
+                                <div class="document-copy">
+                                    <h4>Certificate of Deposit (COD)</h4>
+                                    <p>Upload the Certificate of Deposit document</p>
+                                </div>
+                                <div class="document-actions">
+                                    <label class="document-upload-btn" for="fileCOO">⇧ Choose File</label>
+                                    <input type="file" id="fileCOO" accept=".pdf,.jpg,.jpeg,.png">
+                                    <span id="fileCOOName" class="document-file-name">No file chosen</span>
+                                </div>
+                            </div>
+
+                            <div class="document-row document-orange">
+                                <div class="document-icon">▭</div>
+                                <div class="document-copy">
+                                    <h4>Other Document</h4>
+                                    <p>Upload any other relevant document</p>
+                                </div>
+                                <div class="document-other-controls">
+                                    <input type="text" id="otherDocName" placeholder="Enter document name">
+                                    <label class="document-upload-btn" for="fileOther">⇧ Choose File</label>
+                                    <input type="file" id="fileOther" accept=".pdf,.jpg,.jpeg,.png,.dwg,.dxf">
+                                    <span id="fileOtherName" class="document-file-name pill">No documents selected</span>
+                                </div>
+                            </div>
+
+                            <div class="job-type-badge" id="fileStatusBadge"></div>
+                            <div class="file-preview hidden" id="filePreview">
+                                <div class="file-info">
+                                    <span class="file-icon">📄</span>
+                                    <div class="file-details">
+                                        <span class="file-name" id="fileName"></span>
+                                        <span class="file-size" id="fileSize"></span>
+                                    </div>
+                                    <div id="existingFilesBox" class="existing-files-box"></div>
+                                </div>
+                                <button type="button" class="btn-icon-danger" onclick="app.removeFile()">✕</button>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" onclick="app.clearForm()">Clear</button>
+                            <button type="submit" class="btn btn-primary" id="submitSurveyBtn">
+                                <span>💾</span> Save Survey Record
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- VIEW RECORDS TAB -->
+            <div id="viewTab" class="tab-content">
+                <div class="toolbar">
+                    <div class="search-box">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="searchInput" placeholder="Search by survey name, number, or surveyor..." onkeyup="app.searchSurveys()">
+                    </div>
+                    <div class="filter-group">
+                        <select id="filterType" onchange="app.filterSurveys()">
+                            <option value="all">All Records</option>
+                            <option value="withFile">With Files</option>
+                            <option value="noFile">Without Files</option>
+                            <option value="recordSubmitted">Record Copy Submitted</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="surveyList" class="survey-grid"></div>
+
+                <div id="emptyState" class="empty-state hidden">
+                    <div class="empty-icon">📋</div>
+                    <h3>No surveys found</h3>
+                    <p>Get started by adding your first survey record</p>
+                    <button class="btn btn-primary" onclick="app.showTab('add')">Add Survey</button>
+                </div>
+            </div>
+
+            <!-- ANALYTICS TAB -->
+            <div id="analyticsTab" class="tab-content">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">📊</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="totalSurveys">0</span>
+                            <span class="stat-label">Total Surveys</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📎</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="totalFiles">0</span>
+                            <span class="stat-label">Files Attached</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">👤</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="activeSurveyors">0</span>
+                            <span class="stat-label">Active Surveyors</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📅</div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="thisMonth">0</span>
+                            <span class="stat-label">This Month</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 20px;">
+                    <div class="card-header">
+                        <h3>Recent Activity</h3>
+                    </div>
+                    <div id="activityList" class="activity-list"></div>
+                </div>
+            </div>
+
+            <!-- ALL WORK MAP TAB -->
+            <div id="allMapTab" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>All Survey Work Map</h3>
+    
+                    </div>
+                    <div class="all-map-toolbar">
+                        <select id="mapSurveyorFilter" onchange="app.renderAllWorkMap()">
+                            <option value="all">All Surveyors</option>
+                        </select>
+                        <select id="mapLgaFilter" onchange="app.renderAllWorkMap()">
+                            <option value="all">All LGAs</option>
+                        </select>
+                    </div>
+                    <div id="allWorkMap" class="map-container all-work-map"></div>
+                    <div id="allMapList" class="admin-list"></div>
+                </div>
+            </div>
+
+            <!-- ADMIN TAB -->
+            <div id="adminTab" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>User Approval & Activity</h3>=
+                    </div>
+                    <div id="adminUserList" class="admin-list"></div>
+                    <div class="card-header">
+                        <h3>Recent Database Inputs</h3>
+                    </div>
+                    <div id="adminRecordList" class="admin-list"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL -->
+    <div id="surveyModal" class="modal">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h2>Survey Details</h2>
+                <button class="btn-close" onclick="app.closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="detail-grid">
+                    <div class="detail-item">
+                        <label>Plan Number</label>
+                        <p id="modalSurveyNumber">-</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Title</label>
+                        <p id="modalSurveyName">-</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Surveyor</label>
+                        <p id="modalSurveyor">-</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Area</label>
+                        <p id="modalArea">-</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Observed By</label>
+                        <p id="modalObservedBy">-</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Job Type</label>
+                        <p id="modalJobType">-</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Created</label>
+                        <p id="modalDate">-</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Easting</label>
+                        <p id="modalEasting">-</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Northing</label>
+                        <p id="modalNorthing">-</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Local Government</label>
+                        <p id="modalLocalGov">-</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Survey Date</label>
+                        <p id="modalSurveyDate">-</p>
+                    </div>
+                    <div class="detail-item">
+                        <label>Land Unit</label>
+                        <p id="modalAreaUnit">-</p>
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <label>Location</label>
+                    <p id="modalDescription" class="description-box">No location provided</p>
+                </div>
+
+                <div class="detail-section">
+                    <label>Remark</label>
+                    <p id="modalRemark" class="description-box">No remarks</p>
+                </div>
+
+                <div class="detail-section">
+                    <label>Location Map</label>
+                    <div id="map" class="map-container"></div>
+                    <div class="map-actions">
+                        <button class="btn btn-secondary" onclick="app.openInGoogleMaps()">
+                            <span>🌐</span> Open in Google Maps
+                        </button>
+                        <button class="btn btn-secondary" onclick="app.copyCoordinates()">
+                            <span>📋</span> Copy Coordinates
+                        </button>
+                    </div>
+                </div>
+
+                <div class="detail-section" id="fileSection">
+                    <label>Documents</label>
+                    <div id="fileViewer" class="file-viewer">
+                        <div id="viewSurveyPlan"></div>
+                        <div id="viewRecordCopy"></div>
+                        <div id="viewCOD"></div>
+                        <div id="viewOther"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+                <button class="btn btn-danger" onclick="app.deleteCurrentSurvey()">Delete Record</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
