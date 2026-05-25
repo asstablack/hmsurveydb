@@ -55,6 +55,7 @@
     <!-- DASHBOARD -->
     <div id="dashboard" class="dashboard-container hidden">
 
+        <div class="sidebar-overlay" onclick="app.toggleSidebar()"></div>
         <aside class="sidebar">
             <div class="sidebar-header">
                 <img src="images/company-logo.png" alt="Company Logo" class="sidebar-logo">
@@ -102,6 +103,7 @@
 
         <main class="main-content">
             <header class="content-header">
+                <button class="mobile-menu-btn" onclick="app.toggleSidebar()" id="mobileMenuBtn">☰</button>
                 <h1 id="pageTitle">Add New Survey</h1>
                 <div class="header-actions">
                     <button class="btn-icon" onclick="app.exportData()" title="Export to CSV">📥</button>
