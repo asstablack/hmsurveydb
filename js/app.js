@@ -6,7 +6,7 @@
 const app = {
     // State
     currentUser: null,
-    apiBaseUrl: 'http://localhost:3000',
+    apiBaseUrl: window.location.origin,
     surveys: [],
     systemUsers: [],
     auditLogs: [],
