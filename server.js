@@ -67,15 +67,17 @@ function normalizeSurvey(row) {
 }
 
 async function ensureDatabase() {
-    const bootstrap = await mysql.createConnection({
-        host: dbConfig.host,
-        port: dbConfig.port,
-        user: dbConfig.user,
-        password: dbConfig.password
-    });
+    if (['localhost', '127.0.0.1'].includes(dbConfig.host)) {
+        const bootstrap = await mysql.createConnection({
+            host: dbConfig.host,
+            port: dbConfig.port,
+            user: dbConfig.user,
+            password: dbConfig.password
+        });
 
-    await bootstrap.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\``);
-    await bootstrap.end();
+        await bootstrap.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\``);
+        await bootstrap.end();
+    }
 
     await pool.query(`
         CREATE TABLE IF NOT EXISTS surveys (
