@@ -8,13 +8,43 @@ require('dotenv').config();
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
+function cleanEnvValue(value) {
+    if (!value) return '';
+    return String(value).trim().replace(/^["']|["']$/g, '');
+}
+
+function getEnvValue(...names) {
+    for (const name of names) {
+        const value = cleanEnvValue(process.env[name]);
+        if (value) return value;
+    }
+    return '';
+}
+
+function getEnvNumber(fallback, ...names) {
+    const value = getEnvValue(...names);
+    const number = Number(value || fallback);
+    return Number.isFinite(number) ? number : fallback;
+}
+
 const dbConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'survey_record_management'
+    host: getEnvValue('DB_HOST', 'MYSQLHOST') || 'localhost',
+    port: getEnvNumber(3306, 'DB_PORT', 'MYSQLPORT'),
+    user: getEnvValue('DB_USER', 'MYSQLUSER') || 'root',
+    password: getEnvValue('DB_PASSWORD', 'MYSQLPASSWORD'),
+    database: getEnvValue('DB_NAME', 'MYSQLDATABASE') || 'survey_record_management'
 };
+
+function validateDatabaseConfig() {
+    const unresolvedValue = Object.values(dbConfig).find((value) => String(value).includes('${{'));
+    if (unresolvedValue) {
+        throw new Error('Database environment variables are not resolving. Check the MySQL service name in Railway variables.');
+    }
+
+    if (!dbConfig.host || !dbConfig.user || !dbConfig.database) {
+        throw new Error('Missing database configuration. Set DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, and DB_PORT.');
+    }
+}
 
 const pool = mysql.createPool({
     ...dbConfig,
@@ -67,6 +97,8 @@ function normalizeSurvey(row) {
 }
 
 async function ensureDatabase() {
+    validateDatabaseConfig();
+
     if (['localhost', '127.0.0.1'].includes(dbConfig.host)) {
         const bootstrap = await mysql.createConnection({
             host: dbConfig.host,
@@ -526,6 +558,6 @@ ensureDatabase()
     })
     .catch((error) => {
         console.error('Unable to start server. Check your MySQL settings.');
-        console.error(error.message);
+        console.error(error && error.stack ? error.stack : error);
         process.exit(1);
     });
