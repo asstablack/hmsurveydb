@@ -18,13 +18,6 @@ const app = {
     allWorkLayer: null,
     marker: null,
 
-    // Users
-    users: [
-        { username: 'His Mercy', password: 'mercy123', name: 'HISMERCY', role: 'Admin' },
-        { username: 'surveyor1', password: 'pass123', name: 'John Smith', role: 'Surveyor' },
-        { username: 'surveyor2', password: 'pass123', name: 'Jane Doe', role: 'Surveyor' }
-    ],
-
     // Job type labels
     jobTypeLabels: {
         'change-title': 'Change Title',
