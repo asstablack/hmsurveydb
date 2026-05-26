@@ -256,6 +256,13 @@ const app = {
             item.addEventListener('click', () => {
                 const tab = item.dataset.tab;
                 if (tab) this.showTab(tab);
+                // Auto-close sidebar on mobile after nav click
+                if (window.innerWidth <= 768) {
+                    const sidebar = document.querySelector('.sidebar');
+                    const overlay = document.querySelector('.sidebar-overlay');
+                    if (sidebar) sidebar.classList.remove('active');
+                    if (overlay) overlay.classList.remove('active');
+                }
             });
         });
 
