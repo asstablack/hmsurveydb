@@ -719,6 +719,7 @@ const app = {
             surveyDate: surveyDateEl.value,
             observedBy: observedByEl.value.trim(),
             jobType: jobTypeEl.value,
+            jobRequestType: (this.getEl('jobRequestType') || {}).value || '',
             easting: parseFloat(eastingEl.value),
             northing: parseFloat(northingEl.value),
             description: descriptionEl ? descriptionEl.value.trim() : '',
@@ -886,6 +887,8 @@ editSurvey(id) {
     this.getEl('surveyDate').value = survey.surveyDate || '';
     this.getEl('observedBy').value = survey.observedBy || '';
     this.getEl('jobType').value = survey.jobType || '';
+    const reqTypeEl = this.getEl('jobRequestType');
+    if (reqTypeEl) reqTypeEl.value = survey.jobRequestType || '';
     this.getEl('easting').value = survey.easting ?? '';
     this.getEl('northing').value = survey.northing ?? '';
     this.getEl('description').value = survey.description || '';
@@ -944,14 +947,21 @@ editSurvey(id) {
         const emptyState = this.getEl('emptyState');
         const searchInput = this.getEl('searchInput');
         const filterType = this.getEl('filterType');
+        const filterLGA = this.getEl('filterLGA');
+        const filterJobType = this.getEl('filterJobType');
+        const filterRequestType = this.getEl('filterRequestType');
 
         if (!container) return;
 
         const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
         const filterValue = filterType ? filterType.value : 'all';
+        const lgaValue = filterLGA ? filterLGA.value : 'all';
+        const jobTypeValue = filterJobType ? filterJobType.value : 'all';
+        const requestTypeValue = filterRequestType ? filterRequestType.value : 'all';
 
         let filtered = [...this.surveys];
 
+        // Search
         if (searchTerm) {
             filtered = filtered.filter(s =>
                 (s.surveyName || '').toLowerCase().includes(searchTerm) ||
@@ -962,17 +972,30 @@ editSurvey(id) {
                 (s.surveyDate || '').toLowerCase().includes(searchTerm)
             );
         }
+
+        // LGA filter
+        if (lgaValue !== 'all') {
+            filtered = filtered.filter(s => s.localGov === lgaValue);
+        }
+
+        // Job type filter
+        if (jobTypeValue !== 'all') {
+            filtered = filtered.filter(s => s.jobType === jobTypeValue);
+        }
+
+        // Request type filter
+        if (requestTypeValue !== 'all') {
+            filtered = filtered.filter(s => (s.jobRequestType || '') === requestTypeValue);
+        }
+
+        // File status filter
         if (filterValue === 'withFile') {
-    filtered = filtered.filter(s => this.surveyHasAnyFile(s));
-} 
-        else if (filterValue === 'noFile') {
-    filtered = filtered.filter(s => !this.surveyHasAnyFile(s));
-} 
-        else if (filterValue === 'recordSubmitted') {
-    filtered = filtered.filter(
-        s => s.files?.recordCopySubmitted === true
-    );
-}
+            filtered = filtered.filter(s => this.surveyHasAnyFile(s));
+        } else if (filterValue === 'noFile') {
+            filtered = filtered.filter(s => !this.surveyHasAnyFile(s));
+        } else if (filterValue === 'recordSubmitted') {
+            filtered = filtered.filter(s => s.files?.recordCopySubmitted === true);
+        }
         if (filtered.length === 0) {
             container.innerHTML = '';
             if (emptyState) emptyState.classList.remove('hidden');
@@ -1045,6 +1068,18 @@ editSurvey(id) {
      * Filter surveys
      */
     filterSurveys() {
+        this.renderSurveyList();
+    },
+
+    /**
+     * Reset all filters
+     */
+    resetFilters() {
+        const ids = ['searchInput', 'filterLGA', 'filterJobType', 'filterRequestType', 'filterType'];
+        ids.forEach(id => {
+            const el = this.getEl(id);
+            if (el) el.value = el.tagName === 'INPUT' ? '' : 'all';
+        });
         this.renderSurveyList();
     },
 
