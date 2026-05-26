@@ -203,6 +203,15 @@
                                 </select>
                             </div>
 
+                            <div class="form-group span-2">
+                                <label for="jobRequestType">Job Request Type *</label>
+                                <select id="jobRequestType" required>
+                                    <option value="" disabled selected>Select request type</option>
+                                    <option value="regular">Regular Job</option>
+                                    <option value="special">Special Job</option>
+                                </select>
+                            </div>
+
                             <div class="form-group">
                                 <label for="easting">Easting (X) *</label>
                                 <input type="number" id="easting" step="0.0001" required placeholder="345678.9012">
@@ -314,7 +323,51 @@
                 <div class="toolbar">
                     <div class="search-box">
                         <span class="search-icon">🔍</span>
-                        <input type="text" id="searchInput" placeholder="Search by survey name, number, or surveyor..." onkeyup="app.searchSurveys()">
+                        <input type="text" id="searchInput" placeholder="Search by name, plan number, surveyor..." onkeyup="app.filterSurveys()">
+                    </div>
+                    <div class="filter-group">
+                        <select id="filterLGA" onchange="app.filterSurveys()">
+                            <option value="all">All LGAs</option>
+                            <option value="Abeokuta North">Abeokuta North</option>
+                            <option value="Abeokuta South">Abeokuta South</option>
+                            <option value="Ado-Odo/Ota">Ado-Odo/Ota</option>
+                            <option value="Ewekoro">Ewekoro</option>
+                            <option value="Ifo">Ifo</option>
+                            <option value="Ijebu East">Ijebu East</option>
+                            <option value="Ijebu North">Ijebu North</option>
+                            <option value="Ijebu North East">Ijebu North East</option>
+                            <option value="Ijebu Ode">Ijebu Ode</option>
+                            <option value="Ikenne">Ikenne</option>
+                            <option value="Imeko Afon">Imeko Afon</option>
+                            <option value="Ipokia">Ipokia</option>
+                            <option value="Obafemi Owode">Obafemi Owode</option>
+                            <option value="Odeda">Odeda</option>
+                            <option value="Odogbolu">Odogbolu</option>
+                            <option value="Ogun Waterside">Ogun Waterside</option>
+                            <option value="Remo North">Remo North</option>
+                            <option value="Shagamu">Shagamu</option>
+                            <option value="Yewa North">Yewa North</option>
+                            <option value="Yewa South">Yewa South</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <select id="filterJobType" onchange="app.filterSurveys()">
+                            <option value="all">All Job Types</option>
+                            <option value="change-title">Change Title</option>
+                            <option value="additional-portion">Additional Portion</option>
+                            <option value="plan-updating">Plan Updating</option>
+                            <option value="pillars-picked">Pillars Picked on Ground</option>
+                            <option value="plan-compilation">Plan Compilation</option>
+                            <option value="fresh-pillar">Fresh Pillar</option>
+                            <option value="subdivision">Subdivision</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <select id="filterRequestType" onchange="app.filterSurveys()">
+                            <option value="all">All Request Types</option>
+                            <option value="regular">Regular Job</option>
+                            <option value="special">Special Job</option>
+                        </select>
                     </div>
                     <div class="filter-group">
                         <select id="filterType" onchange="app.filterSurveys()">
@@ -324,6 +377,7 @@
                             <option value="recordSubmitted">Record Copy Submitted</option>
                         </select>
                     </div>
+                    <button class="btn btn-secondary" onclick="app.resetFilters()" style="white-space:nowrap;">✕ Clear Filters</button>
                 </div>
 
                 <div id="surveyList" class="survey-grid"></div>
