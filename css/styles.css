@@ -1519,8 +1519,33 @@ body {
         grid-template-columns: 1fr;
     }
 
+    /* Fix survey grid min size for mobile */
     .survey-grid {
         grid-template-columns: 1fr;
+    }
+
+    .survey-meta {
+        grid-template-columns: 1fr;
+    }
+
+    /* Document rows: stack vertically on mobile */
+    .document-row {
+        grid-template-columns: 48px 1fr;
+        grid-template-rows: auto auto;
+        gap: 10px;
+        padding: 16px;
+    }
+
+    .document-actions,
+    .document-other-controls {
+        grid-column: 1 / -1;
+        flex-direction: row;
+        justify-content: flex-start;
+    }
+
+    .document-upload-btn {
+        min-width: unset;
+        width: auto;
     }
 
     /* Toolbar */
