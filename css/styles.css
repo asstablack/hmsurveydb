@@ -1394,7 +1394,42 @@ body {
     display: block;
 }
 
-/* RESPONSIVE */
+/* Pagination */
+.pagination-controls {
+    padding: 20px 0;
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.page-info {
+    font-size: 14px;
+    color: var(--text-muted);
+    padding: 0 8px;
+}
+
+/* Danger button */
+.btn-danger {
+    background: #ef4444;
+    color: white;
+    border: none;
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}
+
+/* Badge warning */
+.badge-warning {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+}
 
 /* Sidebar overlay - shown on mobile when sidebar is open */
 .sidebar-overlay {
