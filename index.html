@@ -453,15 +453,39 @@
 
             <!-- ADMIN TAB -->
             <div id="adminTab" class="tab-content">
-                <div class="card">
+                <!-- Pending Users Alert -->
+                <div id="pendingAlert" class="card" style="margin-bottom:16px; display:none;">
+                    <div class="card-header" style="background: #fff8e1; border-left: 4px solid #f59e0b;">
+                        <h3>⏳ Pending Approvals</h3>
+                        <p>Users waiting for account approval</p>
+                    </div>
+                    <div id="pendingUserList" class="admin-list"></div>
+                </div>
+
+                <!-- All Users -->
+                <div class="card" style="margin-bottom:16px;">
                     <div class="card-header">
-                        <h3>User Approval & Activity</h3>=
+                        <h3>👥 User Management</h3>
+                        <p>Approve, reject, or reset passwords for system users</p>
                     </div>
                     <div id="adminUserList" class="admin-list"></div>
+                </div>
+
+                <!-- Survey Records by Surveyor -->
+                <div class="card" style="margin-bottom:16px;">
                     <div class="card-header">
-                        <h3>Recent Database Inputs</h3>
+                        <h3>📋 Survey Records by Surveyor</h3>
                     </div>
                     <div id="adminRecordList" class="admin-list"></div>
+                </div>
+
+                <!-- Audit Log -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3>🔍 Audit Log</h3>
+                        <p>Recent system activity</p>
+                    </div>
+                    <div id="auditLogList" class="admin-list"></div>
                 </div>
             </div>
         </main>
