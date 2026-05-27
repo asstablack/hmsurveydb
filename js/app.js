@@ -32,6 +32,8 @@ const app = {
         'subdivision': 'Subdivision'
     },
 
+    syncInterval: null,
+
     /**
      * Initialize the application
      */
@@ -43,6 +45,52 @@ const app = {
         this.checkAuth();
         this.setDefaultSurveyDate();
         this.updateFileStatusBadge();
+    },
+
+    /**
+     * Start background sync — polls server every 30s for fresh data
+     */
+    startSync() {
+        this.stopSync(); // clear any existing interval
+        this.syncInterval = setInterval(async () => {
+            if (!this.currentUser) return;
+            try {
+                const response = await fetch(`${this.apiBaseUrl}/api/surveys`);
+                if (!response.ok) return;
+                const data = await response.json();
+                const fresh = Array.isArray(data.surveys) ? data.surveys : [];
+
+                // Only re-render if data actually changed
+                const currentIds = JSON.stringify(this.surveys.map(s => `${s.id}_${s.updatedAt}`).sort());
+                const freshIds = JSON.stringify(fresh.map(s => `${s.id}_${s.updatedAt}`).sort());
+
+                if (currentIds !== freshIds) {
+                    this.surveys = fresh;
+                    localStorage.setItem('surveys', JSON.stringify(this.surveys));
+                    this.renderSurveyList();
+                    this.updateAnalytics();
+
+                    // Refresh admin panel if it's active
+                    const adminTab = this.getEl('adminTab');
+                    if (adminTab && adminTab.classList.contains('active')) {
+                        await this.loadAuditLogs();
+                        this.renderAdminPanel();
+                    }
+                }
+            } catch (err) {
+                // Silently fail — don't interrupt the user
+            }
+        }, 30000); // every 30 seconds
+    },
+
+    /**
+     * Stop background sync
+     */
+    stopSync() {
+        if (this.syncInterval) {
+            clearInterval(this.syncInterval);
+            this.syncInterval = null;
+        }
     },
 
     /**
@@ -437,6 +485,7 @@ const app = {
 
     logout() {
         this.currentUser = null;
+        this.stopSync();
         sessionStorage.removeItem('currentUser');
 
         const loginPage = this.getEl('loginPage');
@@ -470,6 +519,7 @@ const app = {
         if (adminNav) adminNav.classList.toggle('hidden', !this.isAdmin());
 
         this.showTab('add');
+        this.startSync();
     },
 
     /**
