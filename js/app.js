@@ -18,6 +18,9 @@ const app = {
     allWorkLayer: null,
     marker: null,
 
+    currentPage: 1,
+    pageSize: 12,
+
     // Job type labels
     jobTypeLabels: {
         'change-title': 'Change Title',
@@ -999,20 +1002,30 @@ editSurvey(id) {
         if (filtered.length === 0) {
             container.innerHTML = '';
             if (emptyState) emptyState.classList.remove('hidden');
+            // Remove pagination if exists
+            const oldPager = document.getElementById('surveyPagination');
+            if (oldPager) oldPager.remove();
             return;
         }
 
         if (emptyState) emptyState.classList.add('hidden');
 
-        container.innerHTML = filtered.map(survey => {
+        // Pagination
+        const totalPages = Math.ceil(filtered.length / this.pageSize);
+        if (this.currentPage > totalPages) this.currentPage = totalPages;
+        const start = (this.currentPage - 1) * this.pageSize;
+        const paginated = filtered.slice(start, start + this.pageSize);
+
+        container.innerHTML = paginated.map(survey => {
             const fileClass = this.getFileStatusClass(survey);
             const fileLabel = this.getFileStatusLabel(survey);
+            const isAdmin = this.currentUser?.role === 'admin';
 
             return `
                 <div class="survey-card ${fileClass}" onclick="app.viewSurvey(${survey.id})">
                     <h3>
                         ${this.escapeHtml(survey.surveyName || '-')}
-                        
+                        ${survey.jobRequestType === 'special' ? '<span class="badge badge-warning">⭐ Special</span>' : ''}
                         ${survey.files?.recordCopySubmitted
                             ? '<span class="badge badge-success">✓ Submitted Record Copy</span>'
                             : ''
@@ -1051,16 +1064,62 @@ editSurvey(id) {
                         <button class="btn btn-primary btn-sm" onclick="app.viewOnMap(${survey.id})">🗺 Map</button>
                         <button class="btn btn-secondary btn-sm" onclick="app.editSurvey(${survey.id})">✏ Edit</button>
                         ${this.surveyHasAnyFile(survey) ? `<button class="btn btn-secondary btn-sm" onclick="app.downloadFile(${survey.id})">⬇ Download</button>` : ''}
+                        ${isAdmin ? `<button class="btn btn-danger btn-sm" onclick="app.deleteSurvey(${survey.id})">🗑 Delete</button>` : ''}
                     </div>
                 </div>
             `;
         }).join('');
+
+        // Render pagination controls
+        let pager = document.getElementById('surveyPagination');
+        if (!pager) {
+            pager = document.createElement('div');
+            pager.id = 'surveyPagination';
+            pager.className = 'pagination-controls';
+            container.parentNode.insertBefore(pager, container.nextSibling);
+        }
+
+        if (totalPages <= 1) {
+            pager.innerHTML = '';
+        } else {
+            pager.innerHTML = `
+                <div class="pagination">
+                    <button class="btn btn-secondary btn-sm" onclick="app.goToPage(1)" ${this.currentPage === 1 ? 'disabled' : ''}>« First</button>
+                    <button class="btn btn-secondary btn-sm" onclick="app.goToPage(${this.currentPage - 1})" ${this.currentPage === 1 ? 'disabled' : ''}>‹ Prev</button>
+                    <span class="page-info">Page ${this.currentPage} of ${totalPages} &nbsp;·&nbsp; ${filtered.length} record${filtered.length !== 1 ? 's' : ''}</span>
+                    <button class="btn btn-secondary btn-sm" onclick="app.goToPage(${this.currentPage + 1})" ${this.currentPage === totalPages ? 'disabled' : ''}>Next ›</button>
+                    <button class="btn btn-secondary btn-sm" onclick="app.goToPage(${totalPages})" ${this.currentPage === totalPages ? 'disabled' : ''}>Last »</button>
+                </div>
+            `;
+        }
+    },
+
+    goToPage(page) {
+        this.currentPage = page;
+        this.renderSurveyList();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+
+    async deleteSurvey(id) {
+        if (!confirm('Are you sure you want to permanently delete this survey record? This cannot be undone.')) return;
+        try {
+            const res = await fetch(`${this.apiBaseUrl}/api/surveys/${id}`, { method: 'DELETE' });
+            if (!res.ok && res.status !== 204) throw new Error('Delete failed');
+            this.surveys = this.surveys.filter(s => s.id !== id);
+            this.renderSurveyList();
+            this.updateAnalytics();
+            this.showToast('Survey record deleted', 'success');
+            await this.logAudit('survey_deleted', 'survey', id, { surveyId: id });
+        } catch (err) {
+            this.showToast('Failed to delete survey record', 'error');
+        }
     },
 
     /**
      * Search surveys
      */
     searchSurveys() {
+        this.currentPage = 1;
         this.renderSurveyList();
     },
 
@@ -1068,6 +1127,7 @@ editSurvey(id) {
      * Filter surveys
      */
     filterSurveys() {
+        this.currentPage = 1;
         this.renderSurveyList();
     },
 
@@ -1080,6 +1140,7 @@ editSurvey(id) {
             const el = this.getEl(id);
             if (el) el.value = el.tagName === 'INPUT' ? '' : 'all';
         });
+        this.currentPage = 1;
         this.renderSurveyList();
     },
 
@@ -1842,7 +1903,33 @@ editSurvey(id) {
     renderAdminPanel() {
         const userList = this.getEl('adminUserList');
         const recordList = this.getEl('adminRecordList');
+        const pendingAlert = this.getEl('pendingAlert');
+        const pendingUserList = this.getEl('pendingUserList');
+        const auditLogList = this.getEl('auditLogList');
 
+        // Pending users alert
+        const pendingUsers = this.systemUsers.filter(u => u.status === 'pending');
+        if (pendingAlert) {
+            pendingAlert.style.display = pendingUsers.length ? 'block' : 'none';
+        }
+        if (pendingUserList) {
+            pendingUserList.innerHTML = pendingUsers.length
+                ? pendingUsers.map(user => `
+                    <div class="admin-row" style="border-left: 3px solid #f59e0b;">
+                        <div>
+                            <div class="admin-row-title">${this.escapeHtml(user.name)} <span class="status-pill pending">pending</span></div>
+                            <div class="admin-row-meta">${this.escapeHtml(user.username)} • ${this.escapeHtml(user.email || '-')} • Registered ${this.timeAgo(user.createdAt)}</div>
+                        </div>
+                        <div class="file-actions">
+                            <button class="btn btn-primary btn-sm" onclick="app.updateUserStatus(${user.id}, 'approved')">✓ Approve</button>
+                            <button class="btn btn-danger btn-sm" onclick="app.updateUserStatus(${user.id}, 'rejected')">✕ Reject</button>
+                        </div>
+                    </div>
+                `).join('')
+                : '<div class="admin-row"><div class="text-muted">No pending users.</div></div>';
+        }
+
+        // All users
         if (userList) {
             if (!this.systemUsers.length) {
                 userList.innerHTML = '<div class="admin-row"><div class="text-muted">No users found.</div></div>';
@@ -1850,34 +1937,31 @@ editSurvey(id) {
                 userList.innerHTML = this.systemUsers.map(user => `
                     <div class="admin-row">
                         <div>
-                            <div class="admin-row-title">${this.escapeHtml(user.name)} <span class="status-pill ${this.escapeHtml(user.status)}">${this.escapeHtml(user.status)}</span></div>
-                            <div class="admin-row-meta">${this.escapeHtml(user.username)} • ${this.escapeHtml(user.email || '-')} • ${this.escapeHtml(user.role)}</div>
+                            <div class="admin-row-title">${this.escapeHtml(user.name)} <span class="status-pill ${this.escapeHtml(user.status)}">${this.escapeHtml(user.status)}</span> <span class="status-pill ${user.role === 'admin' ? 'approved' : 'pending'}">${this.escapeHtml(user.role)}</span></div>
+                            <div class="admin-row-meta">${this.escapeHtml(user.username)} • ${this.escapeHtml(user.email || '-')}</div>
                         </div>
                         <div class="file-actions">
-                            ${user.role !== 'admin' && user.status !== 'approved' ? `<button class="btn btn-primary btn-sm" onclick="app.updateUserStatus(${user.id}, 'approved')">Approve</button>` : ''}
-                            ${user.role !== 'admin' && user.status !== 'rejected' ? `<button class="btn btn-danger btn-sm" onclick="app.updateUserStatus(${user.id}, 'rejected')">Reject</button>` : ''}
-                            ${user.role !== 'admin' ? `<button class="btn btn-secondary btn-sm" onclick="app.resetUserPassword(${user.id})">Reset Password</button>` : ''}
+                            ${user.role !== 'admin' && user.status !== 'approved' ? `<button class="btn btn-primary btn-sm" onclick="app.updateUserStatus(${user.id}, 'approved')">✓ Approve</button>` : ''}
+                            ${user.role !== 'admin' && user.status !== 'rejected' ? `<button class="btn btn-danger btn-sm" onclick="app.updateUserStatus(${user.id}, 'rejected')">✕ Reject</button>` : ''}
+                            ${user.role !== 'admin' ? `<button class="btn btn-secondary btn-sm" onclick="app.resetUserPassword(${user.id})">🔑 Reset Password</button>` : ''}
                         </div>
                     </div>
                 `).join('');
             }
         }
 
+        // Survey records by surveyor
         if (recordList) {
             const groups = new Map();
             this.surveys.forEach(survey => {
                 const key = this.getRecordOwnerKey(survey);
                 if (!groups.has(key)) {
-                    groups.set(key, {
-                        name: this.getRecordOwnerName(survey),
-                        records: []
-                    });
+                    groups.set(key, { name: this.getRecordOwnerName(survey), records: [] });
                 }
                 groups.get(key).records.push(survey);
             });
 
-            const groupedSurveyors = [...groups.values()]
-                .sort((a, b) => b.records.length - a.records.length);
+            const groupedSurveyors = [...groups.values()].sort((a, b) => b.records.length - a.records.length);
 
             if (!groupedSurveyors.length) {
                 recordList.innerHTML = '<div class="admin-row"><div class="text-muted">No survey records yet.</div></div>';
@@ -1887,23 +1971,55 @@ editSurvey(id) {
                         <div class="admin-group-header">
                             <div>
                                 <div class="admin-row-title">${this.escapeHtml(group.name)}</div>
-                                <div class="admin-row-meta">${group.records.length} job${group.records.length === 1 ? '' : 's'} inputed</div>
+                                <div class="admin-row-meta">${group.records.length} job${group.records.length === 1 ? '' : 's'} entered</div>
                             </div>
-                            <span class="status-pill approved">Active Surveyor</span>
+                            <span class="status-pill approved">Active</span>
                         </div>
                         ${group.records.map(survey => `
                             <div class="admin-row compact">
                                 <div>
-                                    <div class="admin-row-title">${this.escapeHtml(survey.surveyNumber || '-')} - ${this.escapeHtml(survey.surveyName || '-')}</div>
+                                    <div class="admin-row-title">${this.escapeHtml(survey.surveyNumber || '-')} — ${this.escapeHtml(survey.surveyName || '-')}</div>
                                     <div class="admin-row-meta">
                                         LGA: ${this.escapeHtml(survey.localGov || '-')} •
-                                        Last updated by ${this.escapeHtml(survey.updatedBy || survey.createdBy || 'Unknown')} •
+                                        Updated by ${this.escapeHtml(survey.updatedBy || survey.createdBy || 'Unknown')} •
                                         ${this.escapeHtml(this.formatDate(survey.updatedAt || survey.createdAt))}
                                     </div>
                                 </div>
-                                <button class="btn btn-secondary btn-sm" onclick="app.viewSurvey(${survey.id})">View</button>
+                                <div class="file-actions">
+                                    <button class="btn btn-secondary btn-sm" onclick="app.viewSurvey(${survey.id})">View</button>
+                                    <button class="btn btn-danger btn-sm" onclick="app.deleteSurvey(${survey.id})">🗑</button>
+                                </div>
                             </div>
                         `).join('')}
+                    </div>
+                `).join('');
+            }
+        }
+
+        // Audit log
+        if (auditLogList) {
+            const actionIcons = {
+                survey_created: '➕', survey_updated: '✏️', survey_deleted: '🗑️',
+                user_approved: '✅', user_rejected: '❌', password_changed: '🔑',
+                password_reset: '🔑', login: '🔐'
+            };
+
+            if (!this.auditLogs.length) {
+                auditLogList.innerHTML = '<div class="admin-row"><div class="text-muted">No audit logs yet.</div></div>';
+            } else {
+                auditLogList.innerHTML = this.auditLogs.slice(0, 50).map(log => `
+                    <div class="admin-row compact">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span style="font-size:18px;">${actionIcons[log.action] || '📝'}</span>
+                            <div>
+                                <div class="admin-row-title">${this.escapeHtml(log.action.replace(/_/g, ' '))}</div>
+                                <div class="admin-row-meta">
+                                    By ${this.escapeHtml(log.actor_name || 'System')} (${this.escapeHtml(log.actor_role || '-')}) •
+                                    ${this.timeAgo(log.created_at)}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="admin-row-meta" style="text-align:right; font-size:11px;">${this.escapeHtml(log.entity_type)} #${this.escapeHtml(String(log.entity_id || '-'))}</div>
                     </div>
                 `).join('');
             }
