@@ -6,7 +6,7 @@
 const app = {
     // State
     currentUser: null,
- apiBaseUrl: window.location.origin,
+    apiBaseUrl: window.location.origin,
     surveys: [],
     systemUsers: [],
     auditLogs: [],
@@ -17,6 +17,7 @@ const app = {
     allWorkMap: null,
     allWorkLayer: null,
     marker: null,
+    syncTimer: null,
 
     currentPage: 1,
     pageSize: 12,
@@ -45,6 +46,7 @@ const app = {
         this.checkAuth();
         this.setDefaultSurveyDate();
         this.updateFileStatusBadge();
+        this.startSurveySync();
     },
 
     /**
@@ -113,13 +115,69 @@ const app = {
 
             const data = await response.json();
             const backendSurveys = Array.isArray(data.surveys) ? data.surveys : [];
-            this.surveys = this.mergeSurveyLists(backendSurveys, localSurveys);
+            this.surveys = backendSurveys;
             localStorage.setItem('surveys', JSON.stringify(this.surveys));
-
-            await this.saveData({ clearDeletedIds: true });
+            localStorage.removeItem('deletedSurveyIds');
         } catch (error) {
             console.warn('Using localStorage because backend is unavailable:', error.message);
             this.surveys = localSurveys;
+        }
+    },
+
+    startSurveySync() {
+        if (this.syncTimer) clearInterval(this.syncTimer);
+
+        this.syncTimer = setInterval(() => {
+            if (document.hidden) return;
+            this.refreshSurveyData({ silent: true });
+        }, 15000);
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) this.refreshSurveyData({ silent: true });
+        });
+    },
+
+    async refreshSurveyData(options = {}) {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/surveys`);
+            if (!response.ok) throw new Error('Backend request failed');
+
+            const data = await response.json();
+            const backendSurveys = Array.isArray(data.surveys) ? data.surveys : [];
+            const previousIds = new Set(this.surveys.map(survey => String(survey.id)));
+
+            this.surveys = backendSurveys;
+            localStorage.setItem('surveys', JSON.stringify(this.surveys));
+            localStorage.removeItem('deletedSurveyIds');
+
+            if (this.currentSurvey && !this.surveys.some(survey => String(survey.id) === String(this.currentSurvey.id))) {
+                this.closeModal();
+                if (!options.silent) this.showToast('This survey record was deleted.', 'warning');
+            }
+
+            this.renderCurrentDataViews();
+
+            if (!options.silent && backendSurveys.some(survey => !previousIds.has(String(survey.id)))) {
+                this.showToast('Survey records updated.', 'success');
+            }
+        } catch (error) {
+            console.warn('Could not refresh backend records:', error.message);
+        }
+    },
+
+    renderCurrentDataViews() {
+        const activeTab = document.querySelector('.tab-content.active');
+        if (!activeTab) return;
+
+        if (activeTab.id === 'viewTab') {
+            this.renderSurveyList();
+        } else if (activeTab.id === 'analyticsTab') {
+            this.updateAnalytics();
+        } else if (activeTab.id === 'allMapTab') {
+            this.populateAllMapFilters();
+            this.renderAllWorkMap();
+        } else if (activeTab.id === 'adminTab' && this.isAdmin()) {
+            this.renderAdminPanel();
         }
     },
 
@@ -1829,21 +1887,34 @@ editSurvey(id) {
         if (!this.currentSurvey) return;
 
         if (confirm('Are you sure you want to delete this survey record? This action cannot be undone.')) {
-            this.rememberDeletedSurveyId(this.currentSurvey.id);
-            this.surveys = this.surveys.filter(s => s.id !== this.currentSurvey.id);
+            const surveyToDelete = this.currentSurvey;
+
             try {
-                await this.saveData();
-                await this.logAudit('survey_deleted', 'survey', this.currentSurvey.id, {
-                    surveyNumber: this.currentSurvey.surveyNumber,
-                    surveyName: this.currentSurvey.surveyName
+                const response = await fetch(`${this.apiBaseUrl}/api/surveys/${encodeURIComponent(surveyToDelete.id)}`, {
+                    method: 'DELETE'
                 });
+
+                if (!response.ok && response.status !== 404) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.message || 'Failed to delete survey from backend');
+                }
+
+                this.rememberDeletedSurveyId(surveyToDelete.id);
+                this.surveys = this.surveys.filter(s => String(s.id) !== String(surveyToDelete.id));
+                localStorage.setItem('surveys', JSON.stringify(this.surveys));
+
+                await this.logAudit('survey_deleted', 'survey', surveyToDelete.id, {
+                    surveyNumber: surveyToDelete.surveyNumber,
+                    surveyName: surveyToDelete.surveyName
+                });
+
+                this.closeModal();
+                this.renderCurrentDataViews();
+                this.showToast('Survey deleted successfully', 'success');
             } catch (error) {
                 console.error(error);
-                this.showToast('Record removed locally, but backend sync failed.', 'warning');
+                this.showToast('Could not delete record from backend. Please try again.', 'error');
             }
-            this.closeModal();
-            this.renderSurveyList();
-            this.showToast('Survey deleted successfully', 'success');
         }
     },
 
