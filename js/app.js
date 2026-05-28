@@ -44,6 +44,7 @@ const app = {
         await this.loadAuditLogs();
         this.setupEventListeners();
         this.checkAuth();
+        this.checkPasswordResetLink();
         this.setDefaultSurveyDate();
         this.updateFileStatusBadge();
         this.startSurveySync();
@@ -351,6 +352,22 @@ const app = {
             });
         }
 
+        const forgotPasswordForm = this.getEl('forgotPasswordForm');
+        if (forgotPasswordForm) {
+            forgotPasswordForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleForgotPassword();
+            });
+        }
+
+        const resetPasswordForm = this.getEl('resetPasswordForm');
+        if (resetPasswordForm) {
+            resetPasswordForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleResetPassword();
+            });
+        }
+
         // Survey form
         const surveyForm = this.getEl('surveyForm');
         if (surveyForm) {
@@ -458,9 +475,50 @@ const app = {
     toggleRegister(showRegister) {
         const loginForm = this.getEl('loginForm');
         const registerForm = this.getEl('registerForm');
+        const forgotPasswordForm = this.getEl('forgotPasswordForm');
+        const resetPasswordForm = this.getEl('resetPasswordForm');
 
         if (loginForm) loginForm.classList.toggle('hidden', showRegister);
         if (registerForm) registerForm.classList.toggle('hidden', !showRegister);
+        if (forgotPasswordForm) forgotPasswordForm.classList.add('hidden');
+        if (resetPasswordForm) resetPasswordForm.classList.add('hidden');
+    },
+
+    toggleForgotPassword(showForgot) {
+        const loginForm = this.getEl('loginForm');
+        const registerForm = this.getEl('registerForm');
+        const forgotPasswordForm = this.getEl('forgotPasswordForm');
+        const resetPasswordForm = this.getEl('resetPasswordForm');
+
+        if (loginForm) loginForm.classList.toggle('hidden', showForgot);
+        if (forgotPasswordForm) forgotPasswordForm.classList.toggle('hidden', !showForgot);
+        if (registerForm) registerForm.classList.add('hidden');
+        if (resetPasswordForm) resetPasswordForm.classList.add('hidden');
+    },
+
+    showLoginForm() {
+        ['registerForm', 'forgotPasswordForm', 'resetPasswordForm'].forEach(id => {
+            const form = this.getEl(id);
+            if (form) form.classList.add('hidden');
+        });
+
+        const loginForm = this.getEl('loginForm');
+        if (loginForm) loginForm.classList.remove('hidden');
+    },
+
+    checkPasswordResetLink() {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('resetToken');
+        if (!token) return;
+
+        this.showLoginForm();
+        const loginForm = this.getEl('loginForm');
+        const resetPasswordForm = this.getEl('resetPasswordForm');
+        const resetToken = this.getEl('resetToken');
+
+        if (loginForm) loginForm.classList.add('hidden');
+        if (resetPasswordForm) resetPasswordForm.classList.remove('hidden');
+        if (resetToken) resetToken.value = token;
     },
 
     async handleRegister() {
@@ -485,6 +543,54 @@ const app = {
             this.toggleRegister(false);
             this.showToast(data.message || 'Registration submitted for approval.', 'success');
             await this.loadUsers();
+        } catch (error) {
+            this.showToast(error.message, 'error');
+        }
+    },
+
+    async handleForgotPassword() {
+        const email = this.getEl('forgotEmail')?.value.trim();
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/auth/forgot-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Could not send reset link');
+            }
+
+            this.getEl('forgotPasswordForm')?.reset();
+            this.showLoginForm();
+            this.showToast(data.message || 'Password reset email sent.', 'success');
+        } catch (error) {
+            this.showToast(error.message, 'error');
+        }
+    },
+
+    async handleResetPassword() {
+        const token = this.getEl('resetToken')?.value.trim();
+        const newPassword = this.getEl('resetNewPassword')?.value;
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/auth/reset-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token, newPassword })
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Could not reset password');
+            }
+
+            this.getEl('resetPasswordForm')?.reset();
+            window.history.replaceState({}, document.title, window.location.pathname);
+            this.showLoginForm();
+            this.showToast(data.message, 'success');
         } catch (error) {
             this.showToast(error.message, 'error');
         }
@@ -520,7 +626,9 @@ const app = {
                 username: user.username,
                 name: user.name,
                 role: user.role,
-                status: user.status
+                status: user.status,
+                email: user.email,
+                adminRequestStatus: user.adminRequestStatus
             };
             sessionStorage.setItem('currentUser', JSON.stringify(user));
             await this.loadUsers();
@@ -575,6 +683,17 @@ const app = {
 
         const adminNav = this.getEl('adminNav');
         if (adminNav) adminNav.classList.toggle('hidden', !this.isAdmin());
+
+        const requestAdminBtn = this.getEl('requestAdminBtn');
+        if (requestAdminBtn) {
+            const currentSystemUser = this.systemUsers.find(user => String(user.id) === String(this.currentUser.id));
+            const hasPendingAdminRequest = currentSystemUser?.adminRequestStatus === 'pending';
+            requestAdminBtn.classList.toggle('hidden', this.isAdmin() || hasPendingAdminRequest);
+            requestAdminBtn.disabled = hasPendingAdminRequest;
+            requestAdminBtn.innerHTML = hasPendingAdminRequest
+                ? '<span>🛡</span> Admin Request Pending'
+                : '<span>🛡</span> Request Admin Access';
+        }
 
         this.showTab('add');
         this.startSync();
@@ -2021,11 +2140,103 @@ editSurvey(id) {
         }
     },
 
+    async requestAdminRole() {
+        if (!this.currentUser?.id || this.isAdmin()) return;
+
+        if (!confirm('Request administrator access? An existing admin must approve it.')) return;
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/users/${this.currentUser.id}/admin-request`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: this.currentUser.id })
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Could not submit admin request');
+            }
+
+            await this.loadUsers();
+            this.showDashboard();
+            this.showToast(data.message, 'success');
+        } catch (error) {
+            this.showToast(error.message, 'error');
+        }
+    },
+
+    async updateAdminRequestStatus(requestId, status) {
+        if (!this.isAdmin()) {
+            this.showToast('Administrator access only.', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/admin-requests/${requestId}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    status,
+                    adminId: this.currentUser.id,
+                    adminName: this.currentUser.name
+                })
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Could not update admin request');
+            }
+
+            await this.loadUsers();
+            await this.loadAuditLogs();
+            this.renderAdminPanel();
+            this.showToast(data.message, 'success');
+        } catch (error) {
+            this.showToast(error.message, 'error');
+        }
+    },
+
+    async updateUserRole(userId, role) {
+        if (!this.isAdmin()) {
+            this.showToast('Administrator access only.', 'error');
+            return;
+        }
+
+        const user = this.systemUsers.find(item => item.id === userId);
+        const action = role === 'admin' ? 'promote' : 'demote';
+        if (!confirm(`Are you sure you want to ${action} ${user?.name || 'this user'}?`)) return;
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/users/${userId}/role`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    role,
+                    adminId: this.currentUser.id,
+                    adminName: this.currentUser.name
+                })
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Could not update user role');
+            }
+
+            await this.loadUsers();
+            await this.loadAuditLogs();
+            this.renderAdminPanel();
+            this.showToast(data.message, 'success');
+        } catch (error) {
+            this.showToast(error.message, 'error');
+        }
+    },
+
     renderAdminPanel() {
         const userList = this.getEl('adminUserList');
         const recordList = this.getEl('adminRecordList');
         const pendingAlert = this.getEl('pendingAlert');
         const pendingUserList = this.getEl('pendingUserList');
+        const adminRoleRequestList = this.getEl('adminRoleRequestList');
         const auditLogList = this.getEl('auditLogList');
 
         // Pending users alert
@@ -2050,6 +2261,24 @@ editSurvey(id) {
                 : '<div class="admin-row"><div class="text-muted">No pending users.</div></div>';
         }
 
+        if (adminRoleRequestList) {
+            const pendingAdminRequests = this.systemUsers.filter(user => user.adminRequestStatus === 'pending');
+            adminRoleRequestList.innerHTML = pendingAdminRequests.length
+                ? pendingAdminRequests.map(user => `
+                    <div class="admin-row" style="border-left: 3px solid #7c3aed;">
+                        <div>
+                            <div class="admin-row-title">${this.escapeHtml(user.name)} <span class="status-pill pending">admin requested</span></div>
+                            <div class="admin-row-meta">${this.escapeHtml(user.username)} â€¢ ${this.escapeHtml(user.email || '-')} â€¢ Requested ${this.timeAgo(user.adminRequestRequestedAt)}</div>
+                        </div>
+                        <div class="file-actions">
+                            <button class="btn btn-primary btn-sm" onclick="app.updateAdminRequestStatus(${user.adminRequestId}, 'approved')">Approve Admin</button>
+                            <button class="btn btn-danger btn-sm" onclick="app.updateAdminRequestStatus(${user.adminRequestId}, 'rejected')">Reject</button>
+                        </div>
+                    </div>
+                `).join('')
+                : '<div class="admin-row"><div class="text-muted">No admin role requests.</div></div>';
+        }
+
         // All users
         if (userList) {
             if (!this.systemUsers.length) {
@@ -2064,6 +2293,8 @@ editSurvey(id) {
                         <div class="file-actions">
                             ${user.role !== 'admin' && user.status !== 'approved' ? `<button class="btn btn-primary btn-sm" onclick="app.updateUserStatus(${user.id}, 'approved')">✓ Approve</button>` : ''}
                             ${user.role !== 'admin' && user.status !== 'rejected' ? `<button class="btn btn-danger btn-sm" onclick="app.updateUserStatus(${user.id}, 'rejected')">✕ Reject</button>` : ''}
+                            ${user.status === 'approved' && user.role !== 'admin' ? `<button class="btn btn-primary btn-sm" onclick="app.updateUserRole(${user.id}, 'admin')">Promote Admin</button>` : ''}
+                            ${user.status === 'approved' && user.role === 'admin' && String(user.id) !== String(this.currentUser?.id) ? `<button class="btn btn-secondary btn-sm" onclick="app.updateUserRole(${user.id}, 'user')">Demote</button>` : ''}
                             ${user.role !== 'admin' ? `<button class="btn btn-secondary btn-sm" onclick="app.resetUserPassword(${user.id})">🔑 Reset Password</button>` : ''}
                         </div>
                     </div>
@@ -2122,7 +2353,9 @@ editSurvey(id) {
             const actionIcons = {
                 survey_created: '➕', survey_updated: '✏️', survey_deleted: '🗑️',
                 user_approved: '✅', user_rejected: '❌', password_changed: '🔑',
-                password_reset: '🔑', login: '🔐'
+                password_reset: '🔑', login: '🔐',
+                admin_role_requested: '🛡', admin_role_approved: '🛡',
+                admin_role_rejected: '🛡', user_role_changed: '🛡'
             };
 
             if (!this.auditLogs.length) {

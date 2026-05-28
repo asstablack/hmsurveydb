@@ -3,6 +3,7 @@ const cors = require('cors');
 const mysql = require('mysql2/promise');
 const path = require('path');
 const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const app = express();
@@ -35,6 +36,16 @@ const dbConfig = {
     database: getEnvValue('DB_NAME', 'MYSQLDATABASE') || 'survey_record_management'
 };
 
+const appBaseUrl = getEnvValue('APP_BASE_URL', 'PUBLIC_URL') || '';
+const emailConfig = {
+    user: getEnvValue('EMAIL_USER'),
+    pass: getEnvValue('EMAIL_PASS'),
+    from: getEnvValue('EMAIL_FROM') || getEnvValue('EMAIL_USER'),
+    service: getEnvValue('EMAIL_SERVICE') || 'gmail',
+    host: getEnvValue('EMAIL_HOST'),
+    port: getEnvNumber(587, 'EMAIL_PORT')
+};
+
 function validateDatabaseConfig() {
     const unresolvedValue = Object.values(dbConfig).find((value) => String(value).includes('${{'));
     if (unresolvedValue) {
@@ -63,6 +74,64 @@ function verifyPassword(password, user) {
     return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(user.password_hash, 'hex'));
 }
 
+function hashToken(token) {
+    return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function getPublicBaseUrl(req) {
+    if (appBaseUrl) return appBaseUrl.replace(/\/$/, '');
+    return `${req.protocol}://${req.get('host')}`;
+}
+
+function createMailTransport() {
+    if (!emailConfig.user || !emailConfig.pass || !emailConfig.from) return null;
+
+    if (emailConfig.host) {
+        return nodemailer.createTransport({
+            host: emailConfig.host,
+            port: emailConfig.port,
+            secure: emailConfig.port === 465,
+            auth: {
+                user: emailConfig.user,
+                pass: emailConfig.pass
+            }
+        });
+    }
+
+    return nodemailer.createTransport({
+        service: emailConfig.service,
+        auth: {
+            user: emailConfig.user,
+            pass: emailConfig.pass
+        }
+    });
+}
+
+async function sendEmail(to, subject, text) {
+    const transport = createMailTransport();
+    if (!transport) {
+        console.warn(`Email not configured. Skipped email to ${to}: ${subject}`);
+        return false;
+    }
+
+    await transport.sendMail({
+        from: emailConfig.from,
+        to,
+        subject,
+        text
+    });
+    return true;
+}
+
+async function sendEmailSafe(to, subject, text) {
+    try {
+        return await sendEmail(to, subject, text);
+    } catch (error) {
+        console.warn(`Email failed for ${to}: ${error.message}`);
+        return false;
+    }
+}
+
 function toApiUser(user) {
     return {
         id: user.id,
@@ -71,6 +140,9 @@ function toApiUser(user) {
         email: user.email,
         role: user.role,
         status: user.status,
+        adminRequestId: user.admin_request_id || null,
+        adminRequestStatus: user.admin_request_status || null,
+        adminRequestRequestedAt: user.admin_request_requested_at || null,
         createdAt: user.created_at,
         approvedAt: user.approved_at
     };
@@ -166,6 +238,34 @@ async function ensureDatabase() {
             INDEX idx_audit_action (action),
             INDEX idx_audit_actor_id (actor_id),
             INDEX idx_audit_created_at (created_at)
+        )
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS admin_role_requests (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+            requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            resolved_by INT NULL,
+            resolved_at TIMESTAMP NULL,
+            INDEX idx_admin_request_user (user_id),
+            INDEX idx_admin_request_status (status),
+            CONSTRAINT fk_admin_request_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            token_hash VARCHAR(128) NOT NULL UNIQUE,
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_reset_user (user_id),
+            INDEX idx_reset_expires (expires_at),
+            CONSTRAINT fk_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     `);
 
@@ -272,11 +372,118 @@ app.put('/api/auth/change-password', async (req, res, next) => {
     }
 });
 
+app.post('/api/auth/forgot-password', async (req, res, next) => {
+    try {
+        const email = String(req.body.email || '').trim().toLowerCase();
+        if (!email) {
+            return res.status(400).json({ message: 'Email is required' });
+        }
+
+        const genericMessage = 'If the email is linked to an approved account, a password reset link has been sent.';
+        const [users] = await pool.execute(
+            "SELECT id, full_name, email FROM users WHERE email = ? AND status = 'approved' LIMIT 1",
+            [email]
+        );
+
+        if (!users.length) {
+            return res.json({ message: genericMessage });
+        }
+
+        const token = crypto.randomBytes(32).toString('hex');
+        const tokenHash = hashToken(token);
+        const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+        const resetUrl = `${getPublicBaseUrl(req)}/?resetToken=${token}`;
+
+        await pool.execute('DELETE FROM password_reset_tokens WHERE user_id = ? AND used_at IS NULL', [users[0].id]);
+        await pool.execute(
+            'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)',
+            [users[0].id, tokenHash, expiresAt]
+        );
+
+        const emailSent = await sendEmailSafe(
+            users[0].email,
+            'HM SurveyDB password reset',
+            `Hello ${users[0].full_name},\n\nUse this link to reset your password:\n${resetUrl}\n\nThis link expires in 30 minutes. If you did not request this, ignore this email.`
+        );
+
+        const response = { message: genericMessage, emailSent };
+        if (!emailSent && process.env.NODE_ENV !== 'production') {
+            response.resetToken = token;
+        }
+
+        res.json(response);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/auth/reset-password', async (req, res, next) => {
+    try {
+        const token = String(req.body.token || '').trim();
+        const newPassword = String(req.body.newPassword || '');
+
+        if (!token || newPassword.length < 6) {
+            return res.status(400).json({ message: 'Reset token and a new 6 character password are required' });
+        }
+
+        const [tokens] = await pool.execute(
+            `SELECT prt.id, prt.user_id, u.full_name, u.email, u.role
+             FROM password_reset_tokens prt
+             JOIN users u ON u.id = prt.user_id
+             WHERE prt.token_hash = ? AND prt.used_at IS NULL AND prt.expires_at > CURRENT_TIMESTAMP
+             LIMIT 1`,
+            [hashToken(token)]
+        );
+
+        if (!tokens.length) {
+            return res.status(400).json({ message: 'Password reset link is invalid or expired' });
+        }
+
+        const password = hashPassword(newPassword);
+        await pool.execute(
+            'UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?',
+            [password.hash, password.salt, tokens[0].user_id]
+        );
+        await pool.execute('UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?', [tokens[0].id]);
+        await pool.execute(
+            `INSERT INTO audit_logs
+                (action, entity_type, entity_id, actor_id, actor_name, actor_role, details)
+             VALUES ('password_reset', 'user', ?, ?, ?, ?, CAST(? AS JSON))`,
+            [
+                tokens[0].user_id,
+                tokens[0].user_id,
+                tokens[0].full_name,
+                tokens[0].role,
+                JSON.stringify({ mode: 'email_reset' })
+            ]
+        );
+
+        await sendEmailSafe(
+            tokens[0].email,
+            'HM SurveyDB password changed',
+            `Hello ${tokens[0].full_name},\n\nYour HM SurveyDB password was changed successfully. If this was not you, contact an administrator immediately.`
+        );
+
+        res.json({ message: 'Password reset successfully. You can now log in.' });
+    } catch (error) {
+        next(error);
+    }
+});
+
 app.get('/api/users', async (req, res, next) => {
     try {
         const [users] = await pool.query(
-            `SELECT id, full_name, username, email, role, status, created_at, approved_at
-             FROM users ORDER BY status = 'pending' DESC, created_at DESC`
+            `SELECT u.id, u.full_name, u.username, u.email, u.role, u.status, u.created_at, u.approved_at,
+                    arr.id AS admin_request_id,
+                    arr.status AS admin_request_status,
+                    arr.requested_at AS admin_request_requested_at
+             FROM users u
+             LEFT JOIN admin_role_requests arr
+                ON arr.user_id = u.id
+               AND arr.id = (
+                    SELECT MAX(id) FROM admin_role_requests latest WHERE latest.user_id = u.id
+               )
+             ORDER BY u.status = 'pending' DESC, arr.status = 'pending' DESC, u.created_at DESC`
         );
         res.json({ users: users.map(toApiUser) });
     } catch (error) {
@@ -327,6 +534,14 @@ app.put('/api/users/:id/status', async (req, res, next) => {
             return res.status(400).json({ message: 'Status must be approved or rejected' });
         }
 
+        const [targetUsers] = await pool.execute(
+            "SELECT id, full_name, email FROM users WHERE id = ? AND role <> 'admin'",
+            [req.params.id]
+        );
+        if (!targetUsers.length) {
+            return res.status(404).json({ message: 'User not found or cannot update administrator' });
+        }
+
         const [result] = await pool.execute(
             `UPDATE users
              SET status = ?, approved_by = ?, approved_at = IF(? = 'approved', CURRENT_TIMESTAMP, approved_at)
@@ -351,7 +566,205 @@ app.put('/api/users/:id/status', async (req, res, next) => {
             ]
         );
 
+        await sendEmailSafe(
+            targetUsers[0].email,
+            `HM SurveyDB account ${status}`,
+            status === 'approved'
+                ? `Hello ${targetUsers[0].full_name},\n\nYour HM SurveyDB account has been approved. You can now log in.`
+                : `Hello ${targetUsers[0].full_name},\n\nYour HM SurveyDB account request was rejected. Contact the administrator if you believe this is a mistake.`
+        );
+
         res.json({ message: `User ${status}` });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/users/:id/admin-request', async (req, res, next) => {
+    try {
+        const userId = Number(req.params.id);
+        const bodyUserId = Number(req.body.userId || userId);
+
+        if (!userId || userId !== bodyUserId) {
+            return res.status(400).json({ message: 'Invalid user request' });
+        }
+
+        const [users] = await pool.execute(
+            "SELECT id, full_name, email, role, status FROM users WHERE id = ?",
+            [userId]
+        );
+        if (!users.length) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        if (users[0].status !== 'approved') {
+            return res.status(403).json({ message: 'Only approved users can request admin access' });
+        }
+        if (users[0].role === 'admin') {
+            return res.status(400).json({ message: 'This user is already an administrator' });
+        }
+
+        const [existing] = await pool.execute(
+            "SELECT id FROM admin_role_requests WHERE user_id = ? AND status = 'pending' LIMIT 1",
+            [userId]
+        );
+        if (existing.length) {
+            return res.status(409).json({ message: 'Admin role request is already pending' });
+        }
+
+        const [result] = await pool.execute(
+            "INSERT INTO admin_role_requests (user_id, status) VALUES (?, 'pending')",
+            [userId]
+        );
+
+        await pool.execute(
+            `INSERT INTO audit_logs
+                (action, entity_type, entity_id, actor_id, actor_name, actor_role, details)
+             VALUES ('admin_role_requested', 'user', ?, ?, ?, ?, CAST(? AS JSON))`,
+            [
+                userId,
+                userId,
+                users[0].full_name,
+                users[0].role,
+                JSON.stringify({ requestId: result.insertId })
+            ]
+        );
+
+        res.status(201).json({ message: 'Admin role request submitted for approval' });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.put('/api/admin-requests/:id/status', async (req, res, next) => {
+    const connection = await pool.getConnection();
+    try {
+        const requestId = req.params.id;
+        const status = String(req.body.status || '').trim();
+        const adminId = req.body.adminId || null;
+        const adminName = req.body.adminName || null;
+
+        if (!['approved', 'rejected'].includes(status)) {
+            return res.status(400).json({ message: 'Status must be approved or rejected' });
+        }
+
+        const [admins] = await connection.execute(
+            "SELECT id FROM users WHERE id = ? AND role = 'admin' AND status = 'approved'",
+            [adminId]
+        );
+        if (!admins.length) {
+            return res.status(403).json({ message: 'Only an approved administrator can handle admin requests' });
+        }
+
+        await connection.beginTransaction();
+        const [requests] = await connection.execute(
+            `SELECT arr.id, arr.user_id, u.full_name, u.email, u.role
+             FROM admin_role_requests arr
+             JOIN users u ON u.id = arr.user_id
+             WHERE arr.id = ? AND arr.status = 'pending'
+             LIMIT 1`,
+            [requestId]
+        );
+
+        if (!requests.length) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Pending admin role request not found' });
+        }
+
+        await connection.execute(
+            `UPDATE admin_role_requests
+             SET status = ?, resolved_by = ?, resolved_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [status, adminId, requestId]
+        );
+
+        if (status === 'approved') {
+            await connection.execute("UPDATE users SET role = 'admin' WHERE id = ?", [requests[0].user_id]);
+        }
+
+        await connection.execute(
+            `INSERT INTO audit_logs
+                (action, entity_type, entity_id, actor_id, actor_name, actor_role, details)
+             VALUES (?, 'user', ?, ?, ?, 'admin', CAST(? AS JSON))`,
+            [
+                `admin_role_${status}`,
+                requests[0].user_id,
+                adminId,
+                adminName,
+                JSON.stringify({ requestId })
+            ]
+        );
+
+        await connection.commit();
+
+        await sendEmailSafe(
+            requests[0].email,
+            `HM SurveyDB admin request ${status}`,
+            status === 'approved'
+                ? `Hello ${requests[0].full_name},\n\nYour request for administrator access has been approved. Log out and log back in to see admin tools.`
+                : `Hello ${requests[0].full_name},\n\nYour request for administrator access was rejected. Contact an administrator for more details.`
+        );
+
+        res.json({ message: `Admin role request ${status}` });
+    } catch (error) {
+        await connection.rollback();
+        next(error);
+    } finally {
+        connection.release();
+    }
+});
+
+app.put('/api/users/:id/role', async (req, res, next) => {
+    try {
+        const role = String(req.body.role || '').trim();
+        const adminId = req.body.adminId || null;
+        const adminName = req.body.adminName || null;
+
+        if (!['admin', 'user'].includes(role)) {
+            return res.status(400).json({ message: 'Role must be admin or user' });
+        }
+
+        const [admins] = await pool.execute(
+            "SELECT id FROM users WHERE id = ? AND role = 'admin' AND status = 'approved'",
+            [adminId]
+        );
+        if (!admins.length) {
+            return res.status(403).json({ message: 'Only an approved administrator can change user roles' });
+        }
+        if (String(adminId) === String(req.params.id) && role !== 'admin') {
+            return res.status(400).json({ message: 'You cannot remove your own administrator role' });
+        }
+
+        const [targetUsers] = await pool.execute(
+            'SELECT id, full_name, email, role, status FROM users WHERE id = ?',
+            [req.params.id]
+        );
+        if (!targetUsers.length) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        if (targetUsers[0].status !== 'approved') {
+            return res.status(400).json({ message: 'Only approved users can be promoted' });
+        }
+
+        await pool.execute('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
+        await pool.execute(
+            `INSERT INTO audit_logs
+                (action, entity_type, entity_id, actor_id, actor_name, actor_role, details)
+             VALUES ('user_role_changed', 'user', ?, ?, ?, 'admin', CAST(? AS JSON))`,
+            [
+                req.params.id,
+                adminId,
+                adminName,
+                JSON.stringify({ from: targetUsers[0].role, to: role })
+            ]
+        );
+
+        await sendEmailSafe(
+            targetUsers[0].email,
+            'HM SurveyDB role updated',
+            `Hello ${targetUsers[0].full_name},\n\nYour HM SurveyDB role has been changed to ${role}.`
+        );
+
+        res.json({ message: `User role changed to ${role}` });
     } catch (error) {
         next(error);
     }

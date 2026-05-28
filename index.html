@@ -27,6 +27,7 @@
                 </div>
                 <button type="submit" class="btn btn-primary">Login</button>
                 <button type="button" class="btn btn-secondary auth-switch" onclick="app.toggleRegister(true)">Request Account</button>
+                <button type="button" class="btn btn-secondary auth-switch" onclick="app.toggleForgotPassword(true)">Forgot Password</button>
             </form>
 
             <form id="registerForm" class="hidden">
@@ -48,6 +49,28 @@
                 </div>
                 <button type="submit" class="btn btn-primary">Submit for Approval</button>
                 <button type="button" class="btn btn-secondary auth-switch" onclick="app.toggleRegister(false)">Back to Login</button>
+            </form>
+
+            <form id="forgotPasswordForm" class="hidden">
+                <div class="form-group">
+                    <label for="forgotEmail">Account Email</label>
+                    <input type="email" id="forgotEmail" required placeholder="Enter account email">
+                </div>
+                <button type="submit" class="btn btn-primary">Send Reset Link</button>
+                <button type="button" class="btn btn-secondary auth-switch" onclick="app.toggleForgotPassword(false)">Back to Login</button>
+            </form>
+
+            <form id="resetPasswordForm" class="hidden">
+                <div class="form-group">
+                    <label for="resetToken">Reset Token</label>
+                    <input type="text" id="resetToken" required placeholder="Paste reset token">
+                </div>
+                <div class="form-group">
+                    <label for="resetNewPassword">New Password</label>
+                    <input type="password" id="resetNewPassword" required minlength="6" placeholder="Minimum 6 characters">
+                </div>
+                <button type="submit" class="btn btn-primary">Reset Password</button>
+                <button type="button" class="btn btn-secondary auth-switch" onclick="app.showLoginForm()">Back to Login</button>
             </form>
         </div>
     </div>
@@ -94,6 +117,9 @@
                 </div>
                 <button class="btn-logout" onclick="app.changeOwnPassword()">
                     <span>🔑</span> Change Password
+                </button>
+                <button class="btn-logout hidden" id="requestAdminBtn" onclick="app.requestAdminRole()">
+                    <span>🛡</span> Request Admin Access
                 </button>
                 <button class="btn-logout" onclick="app.logout()">
                     <span>🚪</span> Logout
@@ -460,6 +486,15 @@
                         <p>Users waiting for account approval</p>
                     </div>
                     <div id="pendingUserList" class="admin-list"></div>
+                </div>
+
+                <!-- All Users -->
+                <div class="card" style="margin-bottom:16px;">
+                    <div class="card-header">
+                        <h3>🛡 Admin Role Requests</h3>
+                        <p>Review users asking for administrator access</p>
+                    </div>
+                    <div id="adminRoleRequestList" class="admin-list"></div>
                 </div>
 
                 <!-- All Users -->
