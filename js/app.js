@@ -183,7 +183,33 @@ const app = {
     },
 
     isAdmin() {
-        return this.currentUser?.role === 'admin' || this.currentUser?.role === 'Admin';
+        return this.normalizeRole(this.currentUser?.role) === 'admin';
+    },
+
+    normalizeRole(role) {
+        return String(role || '').trim().toLowerCase();
+    },
+
+    normalizeStatus(status) {
+        return String(status || '').trim().toLowerCase();
+    },
+
+    canApproveUser(user) {
+        return this.normalizeRole(user?.role) !== 'admin' && this.normalizeStatus(user?.status) !== 'approved';
+    },
+
+    canRejectUser(user) {
+        return this.normalizeRole(user?.role) !== 'admin' && this.normalizeStatus(user?.status) !== 'rejected';
+    },
+
+    canPromoteUser(user) {
+        return this.normalizeStatus(user?.status) === 'approved' && this.normalizeRole(user?.role) !== 'admin';
+    },
+
+    canDemoteUser(user) {
+        return this.normalizeStatus(user?.status) === 'approved'
+            && this.normalizeRole(user?.role) === 'admin'
+            && String(user?.id) !== String(this.currentUser?.id);
     },
 
     /**
@@ -687,7 +713,7 @@ const app = {
         const requestAdminBtn = this.getEl('requestAdminBtn');
         if (requestAdminBtn) {
             const currentSystemUser = this.systemUsers.find(user => String(user.id) === String(this.currentUser.id));
-            const hasPendingAdminRequest = currentSystemUser?.adminRequestStatus === 'pending';
+            const hasPendingAdminRequest = this.normalizeStatus(currentSystemUser?.adminRequestStatus) === 'pending';
             requestAdminBtn.classList.toggle('hidden', this.isAdmin() || hasPendingAdminRequest);
             requestAdminBtn.disabled = hasPendingAdminRequest;
             requestAdminBtn.innerHTML = hasPendingAdminRequest
@@ -2240,7 +2266,7 @@ editSurvey(id) {
         const auditLogList = this.getEl('auditLogList');
 
         // Pending users alert
-        const pendingUsers = this.systemUsers.filter(u => u.status === 'pending');
+        const pendingUsers = this.systemUsers.filter(u => this.normalizeStatus(u.status) === 'pending');
         if (pendingAlert) {
             pendingAlert.style.display = pendingUsers.length ? 'block' : 'none';
         }
@@ -2262,7 +2288,7 @@ editSurvey(id) {
         }
 
         if (adminRoleRequestList) {
-            const pendingAdminRequests = this.systemUsers.filter(user => user.adminRequestStatus === 'pending');
+            const pendingAdminRequests = this.systemUsers.filter(user => this.normalizeStatus(user.adminRequestStatus) === 'pending');
             adminRoleRequestList.innerHTML = pendingAdminRequests.length
                 ? pendingAdminRequests.map(user => `
                     <div class="admin-row" style="border-left: 3px solid #7c3aed;">
@@ -2287,15 +2313,15 @@ editSurvey(id) {
                 userList.innerHTML = this.systemUsers.map(user => `
                     <div class="admin-row">
                         <div>
-                            <div class="admin-row-title">${this.escapeHtml(user.name)} <span class="status-pill ${this.escapeHtml(user.status)}">${this.escapeHtml(user.status)}</span> <span class="status-pill ${user.role === 'admin' ? 'approved' : 'pending'}">${this.escapeHtml(user.role)}</span></div>
+                            <div class="admin-row-title">${this.escapeHtml(user.name)} <span class="status-pill ${this.escapeHtml(this.normalizeStatus(user.status))}">${this.escapeHtml(user.status)}</span> <span class="status-pill ${this.normalizeRole(user.role) === 'admin' ? 'approved' : 'pending'}">${this.escapeHtml(user.role)}</span></div>
                             <div class="admin-row-meta">${this.escapeHtml(user.username)} • ${this.escapeHtml(user.email || '-')}</div>
                         </div>
                         <div class="file-actions">
-                            ${user.role !== 'admin' && user.status !== 'approved' ? `<button class="btn btn-primary btn-sm" onclick="app.updateUserStatus(${user.id}, 'approved')">✓ Approve</button>` : ''}
-                            ${user.role !== 'admin' && user.status !== 'rejected' ? `<button class="btn btn-danger btn-sm" onclick="app.updateUserStatus(${user.id}, 'rejected')">✕ Reject</button>` : ''}
-                            ${user.status === 'approved' && user.role !== 'admin' ? `<button class="btn btn-primary btn-sm" onclick="app.updateUserRole(${user.id}, 'admin')">Promote Admin</button>` : ''}
-                            ${user.status === 'approved' && user.role === 'admin' && String(user.id) !== String(this.currentUser?.id) ? `<button class="btn btn-secondary btn-sm" onclick="app.updateUserRole(${user.id}, 'user')">Demote</button>` : ''}
-                            ${user.role !== 'admin' ? `<button class="btn btn-secondary btn-sm" onclick="app.resetUserPassword(${user.id})">🔑 Reset Password</button>` : ''}
+                            ${this.canApproveUser(user) ? `<button class="btn btn-primary btn-sm" onclick="app.updateUserStatus(${user.id}, 'approved')">✓ Approve</button>` : ''}
+                            ${this.canRejectUser(user) ? `<button class="btn btn-danger btn-sm" onclick="app.updateUserStatus(${user.id}, 'rejected')">✕ Reject</button>` : ''}
+                            ${this.canPromoteUser(user) ? `<button class="btn btn-primary btn-sm" onclick="app.updateUserRole(${user.id}, 'admin')">Promote Admin</button>` : ''}
+                            ${this.canDemoteUser(user) ? `<button class="btn btn-secondary btn-sm" onclick="app.updateUserRole(${user.id}, 'user')">Demote</button>` : ''}
+                            ${this.normalizeRole(user.role) !== 'admin' ? `<button class="btn btn-secondary btn-sm" onclick="app.resetUserPassword(${user.id})">🔑 Reset Password</button>` : ''}
                         </div>
                     </div>
                 `).join('');
